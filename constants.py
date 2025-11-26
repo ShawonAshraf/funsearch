@@ -1,6 +1,6 @@
 import numpy as np
 from utils import get_all_elements, can_be_added, solve
-from search import evaluate_capset
+from eval import evaluate_capset
 
 # Evaluation environment globals (utils)
 EVAL_ENV = {

@@ -4,7 +4,7 @@ import random
 from loguru import logger
 from constants import EVAL_ENV, INITIAL_PRIORITY_CODE, INPUTS
 from utils import solve
-from search import evaluate_capset
+from eval import evaluate_capset
 
 
 class ProgramsDB:
@@ -24,7 +24,7 @@ class ProgramsDB:
         for island in self.islands:
             island.append(init_entry)
         self.best_overall = init_entry
-        logger.info(f"Initialized with initial score: {init_score:.2f} (mean size)")
+        logger.info(f"Initialized with initial score: {str(init_score)} (mean size)")
 
     def _evaluate_program(self, prog_code):
         """Evaluate program on all inputs, return mean score and signature."""

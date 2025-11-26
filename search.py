@@ -6,11 +6,6 @@ import inspect
 from loguru import logger
 
 
-def evaluate_capset(solution, n: int) -> int:
-    """Evaluate: return size (always valid due to greedy + can_be_added)."""
-    return len(solution)
-
-
 # Main FunSearch loop (paper's algorithm)
 def run_funsearch(
     num_iterations: int = 1000, samples_per_prompt: int = 10, use_mock: bool = True
