@@ -1,7 +1,9 @@
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 import random
 import time
+from loguru import logger
+
 
 @dataclass
 class Program:
@@ -9,12 +11,14 @@ class Program:
     score: float
     signature: Tuple
 
+
 @dataclass
 class Island:
     """
     An isolated subpopulation of programs.
     FunSearch periodically resets the worst half of islands[cite: 130].
     """
+
     clusters: Dict[Tuple, List[Program]] = field(default_factory=dict)
 
     def add_program(self, program: Program):
@@ -25,7 +29,7 @@ class Island:
     def get_best_score(self) -> float:
         """Returns the score of the best individual in this island."""
         if not self.clusters:
-            return -float('inf')
+            return -float("inf")
         return max(p.score for cluster in self.clusters.values() for p in cluster)
 
 
@@ -49,7 +53,7 @@ class ProgramsDatabase:
         """
         island = self.islands[island_id]
         if not island.clusters:
-            return [] # Should handle initialization logic
+            return []  # Should handle initialization logic
 
         selected_programs = []
         clusters = list(island.clusters.values())
@@ -74,19 +78,18 @@ class ProgramsDatabase:
         """
         # Sort islands by their best program's score
         sorted_indices = sorted(
-            range(len(self.islands)),
-            key=lambda i: self.islands[i].get_best_score()
+            range(len(self.islands)), key=lambda i: self.islands[i].get_best_score()
         )
 
         num_to_reset = len(self.islands) // 2
         worst_indices = sorted_indices[:num_to_reset]
         best_indices = sorted_indices[num_to_reset:]
 
-        print(f"Resetting islands: {worst_indices} seeded from {best_indices}")
+        logger.info(f"Resetting islands: {worst_indices} seeded from {best_indices}")
 
         for bad_idx in worst_indices:
             # Clone a random "best" island
-            source_idx = random.choice(best_indices)
+            _ = random.choice(best_indices)
             # In a real impl, deep copy the data. Here we just re-init.
             self.islands[bad_idx] = Island()
             # (Implementation Detail: You would copy the best program to the new island)

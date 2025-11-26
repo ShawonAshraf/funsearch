@@ -1,8 +1,12 @@
 from sampler import Sampler
 from evaluation import Evaluator
 from database import ProgramsDatabase, Program
+from loguru import logger
 
-def funsearch_worker(sampler: Sampler, evaluator: Evaluator, database: ProgramsDatabase, island_id: int):
+
+def funsearch_worker(
+    sampler: Sampler, evaluator: Evaluator, database: ProgramsDatabase, island_id: int
+):
     """
     Represents a single thread of execution:
     Prompt -> LLM -> Evaluate -> Database
@@ -20,7 +24,7 @@ def funsearch_worker(sampler: Sampler, evaluator: Evaluator, database: ProgramsD
         score, signature = evaluator.evaluate_program(full_program)
 
         # 3. Register (if valid)
-        if score > float('-inf'):
+        if score > float("-inf"):
             prog = Program(code=full_program, score=score, signature=signature)
             database.register_program(prog, island_id)
-            print(f"Island {island_id}: Registered program with score {score}")
+            logger.info(f"Island {island_id}: Registered program with score {score}")
