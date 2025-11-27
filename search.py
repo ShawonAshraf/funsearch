@@ -56,7 +56,7 @@ def run_funsearch(
                 db.reset_islands()
             # Progress
             if (it + 1) % 100 == 0:
-                if db.best_overall:
+                if db.best_overall and db.best_overall[2] is not None:
                     mean, sig = db.best_overall[1], db.best_overall[2]
                     sizes = [int(round(s)) for s in sig]
                     logger.info(
@@ -74,7 +74,7 @@ def run_funsearch(
             logger.info("\nStopped by user.")
             break
     # Final results
-    if db.best_overall:
+    if db.best_overall and db.best_overall[2] is not None:
         logger.info("\n=== FINAL BEST PROGRAM ===")
         logger.info(db.best_overall[0])
         logger.info(f"Mean size: {db.best_overall[1]:.2f}")

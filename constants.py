@@ -53,10 +53,6 @@ PRIORITY_DOC = (
 )
 
 # Initial trivial program
-INITIAL_PRIORITY_CODE = (
-    """def priority(element: tuple[int, ...], n: int) -> float:
-        """
-    + PRIORITY_DOC
-    + """
+INITIAL_PRIORITY_CODE = f"""def priority(element: tuple[int, ...], n: int) -> float:
+    {PRIORITY_DOC}
     return 0.0"""
-)

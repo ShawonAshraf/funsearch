@@ -5,29 +5,45 @@ from loguru import logger
 from constants import EVAL_ENV, INITIAL_PRIORITY_CODE, INPUTS
 from utils import solve
 from eval import evaluate_capset
+from typing import List, Tuple, Dict, Optional
 
 
 class ProgramsDB:
-    def __init__(self, num_islands=20, max_island_size=2000):
+    def __init__(self, num_islands: int = 20, max_island_size: int = 2000):
         self.num_islands = num_islands
-        self.islands = [[] for _ in range(num_islands)]
+        self.islands: List[List[Tuple[str, float, tuple]]] = [
+            [] for _ in range(num_islands)
+        ]
         self.max_island_size = max_island_size
         self.total_evaluations = 0
-        self.best_overall = None
+        self.best_overall: Optional[Tuple[str, float, tuple]] = None
         self.inputs = INPUTS
-        self.T_cluster = 0.25  # Tuned empirically; lower favors best more
-        self.T_program = 0.05  # Favor shorter programs strongly
-        self.reset_every = 512  # Evaluations per reset (simulate 4h with scaling)
-        # Initialize islands with initial program
+        self.T_cluster = (
+            0.25  # Temperature for cluster selection (lower = more elitist)
+        )
+        self.T_program = (
+            0.05  # Temperature for program length bias (lower = prefer shorter)
+        )
+        self.reset_every = 512  # Evaluations between island resets
+        # Initialize all islands with initial program
         init_score, init_sig = self._evaluate_program(INITIAL_PRIORITY_CODE)
         init_entry = (INITIAL_PRIORITY_CODE, init_score, init_sig)
         for island in self.islands:
             island.append(init_entry)
         self.best_overall = init_entry
-        logger.info(f"Initialized with initial score: {str(init_score)} (mean size)")
+        if init_score is not None:
+            logger.info(
+                f"Initialized with initial score: {init_score:.2f} (mean size), signature: {[int(s) for s in init_sig]}"
+            )
+        else:
+            logger.warning(
+                "Failed to evaluate initial program. Starting with None score."
+            )
 
-    def _evaluate_program(self, prog_code):
-        """Evaluate program on all inputs, return mean score and signature."""
+    def _evaluate_program(
+        self, prog_code: str
+    ) -> Tuple[Optional[float], Optional[tuple]]:
+        """Safely evaluate program on all inputs: return (mean score, signature) or None."""
         try:
             env = EVAL_ENV.copy()
             exec(prog_code, env)
@@ -38,8 +54,6 @@ class ProgramsDB:
             for n in self.inputs:
                 solution = solve(n, priority_func)
                 size = evaluate_capset(solution, n)
-                if size is None:
-                    return None, None
                 scores.append(float(size))
             mean_score = np.mean(scores)
             signature = tuple(scores)
@@ -47,26 +61,34 @@ class ProgramsDB:
         except Exception:
             return None, None
 
-    def sample_k_from_island(self, island, k=2):
-        """Sample k programs from a single island using cluster + length biasing."""
+    def sample_k_from_island(
+        self, island: List[Tuple[str, float, tuple]], k: int = 2
+    ) -> List[Tuple[str, float]]:
+        """Sample k programs from island: cluster (signature) then program (short bias)."""
         samples = []
         for _ in range(k):
-            # Build clusters by signature
-            clusters = defaultdict(list)
+            # Cluster by signature
+            clusters: Dict[tuple, List[Tuple[str, float]]] = defaultdict(list)
             for prog, score, sig in island:
-                clusters[sig].append((prog, score))
+                # Only include programs with valid signatures
+                if sig is not None and all(s is not None for s in sig):
+                    clusters[sig].append((prog, score))
             if not clusters:
                 continue
             cluster_sigs = list(clusters.keys())
             cluster_means = [np.mean(sig) for sig in cluster_sigs]
-            # Boltzmann on cluster scores
+            # Boltzmann probs on cluster means
             exp_terms = np.exp(np.array(cluster_means) / self.T_cluster)
             probs = exp_terms / exp_terms.sum()
-            chosen_sig = np.random.choice(cluster_sigs, p=probs)
+            # Sample cluster index (FIX: always 1D numeric indices)
+            indices = list(range(len(cluster_sigs)))
+            chosen_idx = np.random.choice(indices, p=probs)
+            chosen_sig = cluster_sigs[chosen_idx]
             cluster_progs = clusters[chosen_sig]
-            # Sample program favoring shorter
+            # Sample program in cluster: bias shorter (negative length)
             lengths = [-len(prog) for prog, _ in cluster_progs]
-            min_l, max_l = min(lengths), max(lengths)
+            min_l = min(lengths)
+            max_l = max(lengths)
             if max_l == min_l:
                 chosen_prog, chosen_score = random.choice(cluster_progs)
             else:
@@ -78,39 +100,37 @@ class ProgramsDB:
             samples.append((chosen_prog, chosen_score))
         return samples
 
-    def sample_k_programs(self, k=2):
-        """Sample island and k programs from it."""
-        # Sample non-empty island
+    def sample_k_programs(self, k: int = 2) -> Tuple[int, List[Tuple[str, float]]]:
+        """Sample island then k programs from it."""
         non_empty_islands = [i for i, isl in enumerate(self.islands) if len(isl) > 0]
         if not non_empty_islands:
-            raise ValueError("No programs in DB")
+            raise ValueError("No programs in any island")
         island_idx = np.random.choice(non_empty_islands)
         island = self.islands[island_idx]
         samples = self.sample_k_from_island(island, k)
         return island_idx, samples
 
-    def add_program(self, island_idx, prog_code, score, sig):
-        """Add program to island if valid."""
+    def add_program(self, island_idx: int, prog_code: str, score: float, sig: tuple):
+        """Add valid program to island (prune if full)."""
         island = self.islands[island_idx]
-        # Prune if too large: keep best
         if len(island) >= self.max_island_size:
-            # Remove lowest score
-            island.pop(min(range(len(island)), key=lambda i: island[i][1]))
+            # Prune lowest score
+            min_idx = min(range(len(island)), key=lambda i: island[i][1])
+            island.pop(min_idx)
         island.append((prog_code, score, sig))
-        # Update best overall
+        # Update global best
         if score > (self.best_overall[1] if self.best_overall else -np.inf):
             self.best_overall = (prog_code, score, sig)
-            logger.info(f"New best mean score: {score:.2f}, signature: {sig}")
+            logger.info(
+                f"New best mean: {score:.2f}, sizes: {[int(round(s)) for s in sig]}"
+            )
 
     def reset_islands(self):
-        """Reset worst half islands."""
-        island_bests = []
-        for i, island in enumerate(self.islands):
-            if island:
-                best_score = max(p[1] for p in island)
-                island_bests.append((best_score, i))
-            else:
-                island_bests.append((-np.inf, i))
+        """Island evolution: kill worst half, seed from best survivors."""
+        island_bests = [
+            (max((p[1] for p in island), default=-np.inf), i)
+            for i, island in enumerate(self.islands)
+        ]
         island_bests.sort(reverse=True)
         num_survive = self.num_islands // 2
         survivors = [ib[1] for ib in island_bests[:num_survive]]
@@ -120,4 +140,4 @@ class ProgramsDB:
                 surv_island = random.choice(survivors)
                 best_entry = max(self.islands[surv_island], key=lambda x: x[1])
                 self.islands[i].append(best_entry)
-        logger.info("Islands reset.")
+        logger.info("Islands reset: worst half reseeded from elites.")
